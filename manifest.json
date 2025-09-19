@@ -1,0 +1,20 @@
+{
+  "name": "Real Input to Visual Enhancement",
+  "slug": "real-to-visual-edit",
+  "task": "image_3d_edit_sim",
+  "inputs": ["photos", "scans"],
+  "outputs": ["before_after", "glb", "textures", "report_pdf"],
+  "version": "1.0.0",
+  "description": "Simulate visual transformations from real-world inputs (photos or scans), with or without 3D conversion. Supports before/after comparison, region-based editing, and report export.",
+  "capabilities": [
+    "visual_editing",
+    "region_enhancement", 
+    "optional_3d_editing"
+  ],
+  "ui_features": [
+    "split_view_before_after",
+    "region_selector",
+    "effect_sliders",
+    "export_functionality"
+  ]
+}

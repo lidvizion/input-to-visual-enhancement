@@ -1,9 +1,10 @@
 'use client'
 
-import React, { Suspense, useRef, useState } from 'react'
+import React, { Suspense, useRef, useState, useEffect } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF } from '@react-three/drei'
-import { Group } from 'three'
+import { Group, Scene, Mesh, Material } from 'three'
+import { track3DRendering, trackError } from '@/lib/monitoring'
 
 interface ModelViewerProps {
   modelUrl?: string
@@ -12,6 +13,8 @@ interface ModelViewerProps {
 
 function Model({ url }: { url: string }) {
   const groupRef = useRef<Group>(null)
+  const sceneRef = useRef<any>(null)
+  const [loadStartTime] = useState(() => performance.now())
   
   useFrame((state) => {
     if (groupRef.current) {
@@ -20,6 +23,31 @@ function Model({ url }: { url: string }) {
   })
 
   const { scene } = useGLTF(url)
+  
+  // Track loading performance
+  useEffect(() => {
+    const loadTime = performance.now() - loadStartTime
+    track3DRendering(url, loadTime, 0, true)
+  }, [url, loadStartTime])
+
+  // Store scene reference for cleanup
+  useEffect(() => {
+    sceneRef.current = scene
+  }, [scene])
+
+  // Cleanup Three.js resources on unmount
+  useEffect(() => {
+    return () => {
+      if (sceneRef.current) {
+        // Simple cleanup - let Three.js handle most of it
+        try {
+          sceneRef.current.clear()
+        } catch (error) {
+          console.warn('Error during scene cleanup:', error)
+        }
+      }
+    }
+  }, [])
   
   return (
     <group ref={groupRef}>
@@ -44,6 +72,24 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
   className = '',
 }) => {
   const [hasError, setHasError] = useState(false)
+  const [isVisible, setIsVisible] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Intersection Observer for lazy loading
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry.isIntersecting)
+      },
+      { threshold: 0.1 }
+    )
+    
+    if (containerRef.current) {
+      observer.observe(containerRef.current)
+    }
+    
+    return () => observer.disconnect()
+  }, [])
 
   // Check if this is a demo URL or invalid URL
   const isDemoUrl = !modelUrl || hasError || 
@@ -54,7 +100,10 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
 
   if (isDemoUrl) {
     return (
-      <div className={`bg-gradient-to-br from-slate-100 to-slate-200 rounded-lg flex items-center justify-center ${className}`}>
+      <div 
+        ref={containerRef}
+        className={`bg-gradient-to-br from-slate-100 to-slate-200 rounded-lg flex items-center justify-center ${className}`}
+      >
         <div className="text-center p-8">
           <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl">🎯</span>
@@ -68,16 +117,44 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
     )
   }
 
+  // Don't render 3D content until visible (lazy loading)
+  if (!isVisible) {
+    return (
+      <div 
+        ref={containerRef}
+        className={`bg-secondary-100 rounded-lg flex items-center justify-center ${className}`}
+      >
+        <div className="text-center p-8">
+          <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-2"></div>
+          <p className="text-sm text-secondary-500">Loading 3D model...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={`bg-secondary-100 rounded-lg overflow-hidden ${className}`}>
+    <div 
+      ref={containerRef}
+      className={`bg-secondary-100 rounded-lg overflow-hidden ${className}`}
+    >
       <Canvas
         camera={{ position: [0, 0, 5], fov: 50 }}
         style={{ width: '100%', height: '100%' }}
         onError={(error) => {
           console.error('Canvas error:', error)
           setHasError(true)
+          trackError(error instanceof Error ? error : new Error('Canvas error'), {
+            component: 'ModelViewer',
+            action: 'canvas_error',
+            metadata: { modelUrl }
+          })
         }}
-        gl={{ antialias: true, alpha: true }}
+        gl={{ 
+          antialias: true, 
+          alpha: true,
+          powerPreference: "high-performance"
+        }}
+        dpr={[1, 2]} // Limit pixel ratio for performance
       >
         <Suspense fallback={<LoadingFallback />}>
           <ambientLight intensity={0.5} />

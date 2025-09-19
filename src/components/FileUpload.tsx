@@ -1,9 +1,11 @@
 import React, { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, Image, FileText, X } from 'lucide-react'
+import { Upload, Image, FileText, X, AlertTriangle } from 'lucide-react'
 import { Button } from './ui/Button'
 import { cn, formatFileSize } from '@/lib/utils'
 import { UploadedFile } from '@/types'
+import { validateFile, sanitizeFileName } from '@/lib/validations'
+import { trackFileOperation, trackError } from '@/lib/monitoring'
 
 interface FileUploadProps {
   onFileUpload: (file: UploadedFile) => void
@@ -19,19 +21,55 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   className,
 }) => {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
+  const [error, setError] = useState<string | null>(null)
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
+    // Clear previous errors
+    setError(null)
+
+    // Handle rejected files
+    if (rejectedFiles.length > 0) {
+      const rejection = rejectedFiles[0]
+      const errorMessage = rejection.errors[0]?.message || 'File rejected'
+      setError(errorMessage)
+      trackFileOperation('upload_rejected', rejection.file.type, rejection.file.size, false)
+      return
+    }
+
     acceptedFiles.forEach((file) => {
-      const uploadedFile: UploadedFile = {
-        id: Math.random().toString(36).substr(2, 9),
-        file,
-        preview: URL.createObjectURL(file),
-        type: file.type.startsWith('image/') ? 'photo' : 'scan',
-        uploadedAt: new Date(),
+      // Validate file
+      const validation = validateFile(file)
+      if (!validation.success) {
+        setError(validation.error || 'Invalid file')
+        trackFileOperation('upload_validation_failed', file.type, file.size, false)
+        return
       }
-      
-      setUploadedFiles(prev => [...prev, uploadedFile])
-      onFileUpload(uploadedFile)
+
+      try {
+        // Sanitize filename
+        const sanitizedName = sanitizeFileName(file.name)
+        
+        const uploadedFile: UploadedFile = {
+          id: Math.random().toString(36).substr(2, 9),
+          file: new File([file], sanitizedName, { type: file.type }),
+          preview: URL.createObjectURL(file),
+          type: file.type.startsWith('image/') ? 'photo' : 'scan',
+          uploadedAt: new Date(),
+        }
+        
+        setUploadedFiles(prev => [...prev, uploadedFile])
+        onFileUpload(uploadedFile)
+        trackFileOperation('upload_success', file.type, file.size, true)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Upload failed'
+        setError(errorMessage)
+        trackError(error instanceof Error ? error : new Error(errorMessage), {
+          component: 'FileUpload',
+          action: 'onDrop',
+          metadata: { fileName: file.name, fileSize: file.size, fileType: file.type }
+        })
+        trackFileOperation('upload_error', file.type, file.size, false)
+      }
     })
   }, [onFileUpload])
 
@@ -96,6 +134,25 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0" />
+          <div>
+            <p className="text-red-800 font-medium">Upload Error</p>
+            <p className="text-red-600 text-sm">{error}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setError(null)}
+            className="ml-auto text-red-500 hover:text-red-700"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
       {uploadedFiles.length > 0 && (
         <div className="mt-8 space-y-4">

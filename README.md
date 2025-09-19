@@ -41,13 +41,60 @@ A comprehensive application that simulates visual transformations from photos or
    npm install
    ```
 
-3. **Set up environment variables**
+3. **Run the development server**
    ```bash
-   cp .env.example .env.local
+   npm run dev
    ```
+
+4. **Open your browser**
+   Navigate to [http://localhost:3000](http://localhost:3000)
+
+## 🧪 Testing
+
+Run the comprehensive test suite:
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run tests for CI
+npm run test:ci
+```
+
+## 🔒 Security Features
+
+The application includes enterprise-grade security measures:
+
+- **File Upload Validation**: Strict file type, size, and content validation
+- **Input Sanitization**: All user inputs are sanitized using Zod schemas
+- **Rate Limiting**: API endpoints protected against abuse (100 req/15min)
+- **Security Headers**: CSP, XSS protection, and other security headers
+- **Error Monitoring**: Comprehensive error tracking and logging
+- **CORS Protection**: Configured for production environments
+
+## ⚡ Performance Optimizations
+
+- **3D Rendering**: Lazy loading, memory management, and GPU optimization
+- **Image Processing**: Efficient image handling and caching
+- **Bundle Optimization**: Code splitting and tree shaking
+- **Monitoring**: Performance metrics and Web Vitals tracking
+- **Memory Management**: Proper cleanup of Three.js resources
+
+## 🛠️ Development
+
+### Environment Setup
+```bash
+cp .env.example .env.local
+```
    
-   Edit `.env.local` with your configuration:
-   ```env
+Edit `.env.local` with your configuration:
+```env
    NEXT_PUBLIC_LV_API_URL=https://api.lidvizion.com
    NEXT_PUBLIC_LV_API_KEY=your_api_key_here
    NEXT_PUBLIC_STORAGE_BUCKET=visual-enhancement-bucket

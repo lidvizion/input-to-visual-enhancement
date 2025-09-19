@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { trackApiCall, trackError } from '@/lib/monitoring'
 
 export async function POST(request: NextRequest) {
+  const startTime = performance.now()
+  let body: any = null
+  
   try {
-    const body = await request.json()
+    body = await request.json()
     const { fileId, edits, options } = body
 
     if (!fileId) {
+      const duration = performance.now() - startTime
+      trackApiCall('/api/process', 'POST', 400, duration)
       return NextResponse.json(
         { error: 'File ID is required' },
         { status: 400 }
@@ -13,6 +19,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (!edits || !Array.isArray(edits)) {
+      const duration = performance.now() - startTime
+      trackApiCall('/api/process', 'POST', 400, duration)
       return NextResponse.json(
         { error: 'Edits array is required' },
         { status: 400 }
@@ -59,9 +67,18 @@ export async function POST(request: NextRequest) {
       mockResponse.report = `/uploads/${fileId}_report.pdf`
     }
 
+    const duration = performance.now() - startTime
+    trackApiCall('/api/process', 'POST', 200, duration)
     return NextResponse.json(mockResponse)
 
   } catch (error) {
+    const duration = performance.now() - startTime
+    trackApiCall('/api/process', 'POST', 500, duration)
+    trackError(error instanceof Error ? error : new Error('Processing error'), {
+      component: 'api/process',
+      action: 'POST',
+      metadata: { fileId: body?.fileId, edits: body?.edits, options: body?.options }
+    })
     console.error('Processing error:', error)
     return NextResponse.json(
       { error: 'Processing failed' },

@@ -1,8 +1,10 @@
 import React, { useState } from 'react'
-import { Plus, Target, Trash2 } from 'lucide-react'
+import { Plus, Target, Trash2, AlertTriangle, X } from 'lucide-react'
 import { Button } from './ui/Button'
 import { cn } from '@/lib/utils'
 import { EditRegion, RegionSelectorProps } from '@/types'
+import { validateRegion, sanitizeRegionName } from '@/lib/validations'
+import { trackUserAction, trackError } from '@/lib/monitoring'
 
 const PRESET_REGIONS: Omit<EditRegion, 'id'>[] = [
   { name: 'Spine (Upper)', type: 'posture' },
@@ -28,26 +30,64 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
   const [newRegionName, setNewRegionName] = useState('')
   const [newRegionType, setNewRegionType] = useState<EditRegion['type']>('posture')
   const [pulseRegion, setPulseRegion] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const handleAddRegion = () => {
     if (newRegionName.trim()) {
-      const regionName = newRegionName.trim()
-      // Check if region with same name already exists
-      const isDuplicate = regions.some(region => 
-        region.name.toLowerCase() === regionName.toLowerCase()
-      )
+      // Clear previous errors
+      setError(null)
       
-      if (isDuplicate) {
-        alert(`Region "${regionName}" already exists!`)
+      // Sanitize input
+      const sanitizedName = sanitizeRegionName(newRegionName.trim())
+      
+      // Validate region data
+      const validation = validateRegion({
+        name: sanitizedName,
+        type: newRegionType
+      })
+      
+      if (!validation.success) {
+        setError(validation.error || 'Invalid region data')
+        trackUserAction('region_validation_failed', 'RegionSelector', {
+          regionName: sanitizedName,
+          regionType: newRegionType
+        })
         return
       }
       
-      onRegionAdd({
-        name: regionName,
-        type: newRegionType,
-      })
-      setNewRegionName('')
-      setShowAddForm(false)
+      // Check if region with same name already exists
+      const isDuplicate = regions.some(region => 
+        region.name.toLowerCase() === sanitizedName.toLowerCase()
+      )
+      
+      if (isDuplicate) {
+        setError(`Region "${sanitizedName}" already exists!`)
+        trackUserAction('region_duplicate_attempt', 'RegionSelector', {
+          regionName: sanitizedName
+        })
+        return
+      }
+      
+      try {
+        onRegionAdd({
+          name: sanitizedName,
+          type: newRegionType,
+        })
+        setNewRegionName('')
+        setShowAddForm(false)
+        trackUserAction('region_added', 'RegionSelector', {
+          regionName: sanitizedName,
+          regionType: newRegionType
+        })
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to add region'
+        setError(errorMessage)
+        trackError(error instanceof Error ? error : new Error(errorMessage), {
+          component: 'RegionSelector',
+          action: 'handleAddRegion',
+          metadata: { regionName: sanitizedName, regionType: newRegionType }
+        })
+      }
     }
   }
 
@@ -59,17 +99,40 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
   }
 
   const handlePresetRegionAdd = (preset: Omit<EditRegion, 'id'>) => {
+    // Clear previous errors
+    setError(null)
+    
+    // Validate preset region
+    const validation = validateRegion(preset)
+    if (!validation.success) {
+      setError(validation.error || 'Invalid preset region')
+      trackUserAction('preset_region_validation_failed', 'RegionSelector', preset)
+      return
+    }
+    
     // Check if region with same name already exists
     const isDuplicate = regions.some(region => 
       region.name.toLowerCase() === preset.name.toLowerCase()
     )
     
     if (isDuplicate) {
-      alert(`Region "${preset.name}" already exists!`)
+      setError(`Region "${preset.name}" already exists!`)
+      trackUserAction('preset_region_duplicate_attempt', 'RegionSelector', preset)
       return
     }
     
-    onRegionAdd(preset)
+    try {
+      onRegionAdd(preset)
+      trackUserAction('preset_region_added', 'RegionSelector', preset)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add preset region'
+      setError(errorMessage)
+      trackError(error instanceof Error ? error : new Error(errorMessage), {
+        component: 'RegionSelector',
+        action: 'handlePresetRegionAdd',
+        metadata: preset
+      })
+    }
   }
 
   const getRegionIcon = (type: EditRegion['type']) => {
@@ -118,6 +181,22 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
           Add
         </Button>
       </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
+          <p className="text-red-700 text-sm">{error}</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setError(null)}
+            className="ml-auto text-red-500 hover:text-red-700 p-1"
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
 
       {/* Add Region Form */}
       {showAddForm && (
